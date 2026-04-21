@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    groups:
+      dev-tooling:
+        patterns: [vitest, "@vitest/*", vite-tsconfig-paths, typescript, eslint*]
+      next-ecosystem:
+        patterns: [next, react, react-dom, "@types/react*"]
+      supabase:
+        patterns: ["@supabase/*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

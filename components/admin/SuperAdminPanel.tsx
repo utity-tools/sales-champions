@@ -12,6 +12,8 @@ import type { Rep, Targets } from '@/types';
 
 type AdminTab = 'overview' | 'reps' | 'targets' | 'badges' | 'log';
 interface LogEntry { ts: string; msg: string; type: 'info' | 'success' | 'danger'; }
+interface BadgeRow { id: number; badge_id: string; rep_id: number; }
+interface RepRow { id: number; team_id: string; }
 
 function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   return (
@@ -87,7 +89,7 @@ export function SuperAdminPanel() {
   };
 
   const handleAddRep = async () => {
-    const teamId = (summary as any)?.teamId ?? null;
+    const teamId = (summary as { reps: Rep[]; salesData: unknown[]; teamId?: string } | undefined)?.teamId ?? null;
     if (!teamId) { showToast('No se encontró team_id'); return; }
     const id = reps.length ? Math.max(...reps.map((r) => r.id)) + 1 : 1;
     const newRep = { name: 'Nuevo Comercial', avatar: 'NC', color: COLORS[id % COLORS.length], role: 'AE', email: `nuevo${id}@empresa.com`, team_id: teamId };
@@ -122,13 +124,13 @@ export function SuperAdminPanel() {
       // Find the badge row id — refetch badges with rep filter
       const res = await fetch(`/api/badges?rep_id=${rep.id}`);
       const rows = await res.json();
-      const row = rows.find((r: any) => r.badge_id === badgeId);
+      const row = (rows as BadgeRow[]).find((r) => r.badge_id === badgeId);
       if (row) await fetch(`/api/badges/${row.id}`, { method: 'DELETE' });
     } else {
       // Need team_id
       const repsRes = await fetch('/api/reps');
       const repsData = await repsRes.json();
-      const teamId = repsData.find((r: any) => r.id === rep.id)?.team_id;
+      const teamId = (repsData as RepRow[]).find((r) => r.id === rep.id)?.team_id;
       if (teamId) {
         await fetch('/api/badges', {
           method: 'POST',
