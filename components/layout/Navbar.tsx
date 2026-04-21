@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useRepSummary } from '@/lib/hooks/useRepSummary';
+import { signOut } from '@/app/actions/auth';
 import { PeriodTabs } from './PeriodTabs';
 import { DateRangePicker } from './DateRangePicker';
 
@@ -63,6 +64,18 @@ export function Navbar() {
     }}>⚙️ Admin</Link>
   );
 
+  const LogoutButton = () => (
+    <form action={signOut}>
+      <button type="submit" style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        background: 'transparent', border: '1px solid #ff3d8b33', borderRadius: 7,
+        color: '#ff3d8b', fontSize: 11, fontFamily: 'inherit',
+        padding: '5px 10px', cursor: 'pointer', transition: 'all .2s',
+        flexShrink: 0, whiteSpace: 'nowrap',
+      }}>⏻ Salir</button>
+    </form>
+  );
+
   return (
     <nav className="nav-root">
       {/* ── Row 1 (always visible) ── */}
@@ -88,6 +101,7 @@ export function Navbar() {
           <div style={{ flex: 1 }} />
           {view === 'personal' && <UserSelector />}
           <AdminLink />
+          <LogoutButton />
         </div>
 
         {/* Tablet row-1 extras: view toggle + spacer + admin link */}
@@ -95,6 +109,7 @@ export function Navbar() {
           <ViewToggle />
           <div style={{ flex: 1 }} />
           <AdminLink />
+          <LogoutButton />
         </div>
 
         {/* Mobile hamburger */}
@@ -120,7 +135,7 @@ export function Navbar() {
         {view === 'personal' && (
           <div className="nav-drawer-row"><UserSelector wrap /></div>
         )}
-        <div className="nav-drawer-row"><AdminLink /></div>
+        <div className="nav-drawer-row"><AdminLink /><LogoutButton /></div>
       </div>
     </nav>
   );
