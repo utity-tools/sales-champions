@@ -5,9 +5,25 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { TeamBarChart } from '@/components/ui/TeamBarChart';
 import { fmt, fmtShort, getSalesForPeriod, getTargetForPeriod } from '@/lib/data';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useRepSummary } from '@/lib/hooks/useRepSummary';
+import { useTargets } from '@/lib/hooks/useTargets';
 
 export function TeamView() {
-  const { period, reps, salesData, targets } = useDashboardStore();
+  const { period } = useDashboardStore();
+  const { data: summary, isLoading: loadingReps } = useRepSummary();
+  const { data: targets, isLoading: loadingTargets } = useTargets();
+
+  if (loadingReps || loadingTargets) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'var(--muted)', fontSize: 14 }}>
+        Cargando datos...
+      </div>
+    );
+  }
+
+  const reps = summary?.reps ?? [];
+  const salesData = summary?.salesData ?? [];
+  const tgt = targets ?? { weekly: 0, monthly: 0, quarterly: 0, yearly: 0, dealTarget: 0, convTarget: 0 };
 
   const sorted = reps
     .map((r, i) => ({
@@ -20,7 +36,7 @@ export function TeamView() {
   const top3 = sorted.slice(0, 3);
   const totalSales = sorted.reduce((a, r) => a + r.sales, 0);
   const totalDeals = sorted.reduce((a, r) => a + (r.data?.deals ?? 0), 0);
-  const teamTarget = reps.length * getTargetForPeriod(targets, period);
+  const teamTarget = reps.length * getTargetForPeriod(tgt, period);
 
   const PODIUM_ORDER = [top3[1], top3[0], top3[2]];
   const PODIUM_RANKS = [2, 1, 3];
@@ -75,7 +91,7 @@ export function TeamView() {
         <div className="team-stats-grid">
           {[
             { label: 'Ventas totales equipo', value: fmt(totalSales), color: '#00e5ff' },
-            { label: 'Objetivo de equipo',    value: `${Math.round((totalSales / teamTarget) * 100)}%`, color: '#00ff9d' },
+            { label: 'Objetivo de equipo',    value: `${Math.round((totalSales / (teamTarget || 1)) * 100)}%`, color: '#00ff9d' },
             { label: 'Total deals cerrados',  value: totalDeals, color: '#ffd600' },
             { label: 'Media por comercial',   value: fmt(Math.round(totalSales / (reps.length || 1))), color: '#b44fff' },
           ].map(({ label, value, color }) => (

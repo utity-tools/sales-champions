@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
-import { useDashboardStore } from '@/store/dashboardStore';
+import { useQueryClient } from '@tanstack/react-query';
+import { useRepSummary } from '@/lib/hooks/useRepSummary';
+import { useTargets } from '@/lib/hooks/useTargets';
+import { useBadges } from '@/lib/hooks/useBadges';
 import { BADGE_DEFS, ROLES, COLORS, fmt } from '@/lib/data';
-import type { Rep, SalesData } from '@/types';
+import type { Rep, Targets } from '@/types';
 
-type AdminTab = 'overview' | 'reps' | 'sales' | 'targets' | 'badges' | 'log';
-
+type AdminTab = 'overview' | 'reps' | 'targets' | 'badges' | 'log';
 interface LogEntry { ts: string; msg: string; type: 'info' | 'success' | 'danger'; }
 
 function SectionHeader({ title, sub }: { title: string; sub?: string }) {
@@ -32,14 +34,21 @@ function StatBox({ label, value, color }: { label: string; value: string | numbe
 const TABS: { k: AdminTab; label: string; icon: string }[] = [
   { k: 'overview', label: 'Resumen',     icon: '📊' },
   { k: 'reps',     label: 'Comerciales', icon: '👥' },
-  { k: 'sales',    label: 'Ventas',      icon: '💰' },
   { k: 'targets',  label: 'Objetivos',   icon: '🎯' },
   { k: 'badges',   label: 'Badges',      icon: '🏅' },
   { k: 'log',      label: 'Registro',    icon: '📋' },
 ];
 
 export function SuperAdminPanel() {
-  const { reps, salesData, targets, badges, updateRep, addRep, updateSalesData, updateTargets, toggleBadge } = useDashboardStore();
+  const qc = useQueryClient();
+  const { data: summary } = useRepSummary();
+  const { data: targets } = useTargets();
+  const { data: badgesMap } = useBadges();
+
+  const reps = summary?.reps ?? [];
+  const salesData = summary?.salesData ?? [];
+  const tgt: Targets = targets ?? { weekly: 0, monthly: 0, quarterly: 0, yearly: 0, dealTarget: 0, convTarget: 0 };
+
   const [tab, setTab] = useState<AdminTab>('overview');
   const [log, setLog] = useState<LogEntry[]>([]);
   const [toast, setToast] = useState('');
@@ -50,25 +59,87 @@ export function SuperAdminPanel() {
     const ts = new Date().toLocaleTimeString('es-ES');
     setLog((prev) => [{ ts, msg, type }, ...prev].slice(0, 50));
   };
+  const invalidate = () => { qc.invalidateQueries({ queryKey: ['rep-summary'] }); qc.invalidateQueries({ queryKey: ['badges'] }); };
 
-  const handleSaveRep = (rep: Rep) => {
-    updateRep(rep.id, rep); setEditingRep(null);
-    addLog(`✏️ Actualizado: ${rep.name}`, 'success'); showToast(`"${rep.name}" actualizado`);
+  const handleSaveRep = async (rep: Rep) => {
+    const res = await fetch(`/api/reps/${rep.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: rep.name, avatar: rep.avatar, color: rep.color, role: rep.role, email: rep.email }),
+    });
+    if (res.ok) {
+      setEditingRep(null);
+      invalidate();
+      addLog(`✏️ Actualizado: ${rep.name}`, 'success');
+      showToast(`"${rep.name}" actualizado`);
+    }
   };
-  const handleToggleActive = (rep: Rep) => {
-    updateRep(rep.id, { active: !rep.active });
-    const action = rep.active ? 'desactivado' : 'activado';
-    addLog(`🔄 ${rep.name} ${action}`, 'info'); showToast(`${rep.name} ${action}`);
+
+  const handleToggleActive = async (rep: Rep) => {
+    await fetch(`/api/reps/${rep.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active: !rep.active }),
+    });
+    invalidate();
+    addLog(`🔄 ${rep.name} ${rep.active ? 'desactivado' : 'activado'}`, 'info');
+    showToast(`${rep.name} ${rep.active ? 'desactivado' : 'activado'}`);
   };
-  const handleAddRep = () => {
-    const id = Math.max(...reps.map((r) => r.id)) + 1;
-    const newRep: Rep = { id, name: 'Nuevo Comercial', avatar: 'NC', color: COLORS[id % COLORS.length], role: 'AE', email: `nuevo${id}@empresa.com`, active: true };
-    addRep(newRep); addLog(`➕ Nuevo: ${newRep.name}`, 'success'); showToast('Nuevo comercial añadido');
+
+  const handleAddRep = async () => {
+    const teamId = (summary as any)?.teamId ?? null;
+    if (!teamId) { showToast('No se encontró team_id'); return; }
+    const id = reps.length ? Math.max(...reps.map((r) => r.id)) + 1 : 1;
+    const newRep = { name: 'Nuevo Comercial', avatar: 'NC', color: COLORS[id % COLORS.length], role: 'AE', email: `nuevo${id}@empresa.com`, team_id: teamId };
+    const res = await fetch('/api/reps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newRep) });
+    if (res.ok) { invalidate(); addLog('➕ Nuevo comercial añadido', 'success'); showToast('Nuevo comercial añadido'); }
   };
-  const handleSaveSales = (repId: number, field: keyof SalesData, value: number) => {
-    updateSalesData(repId, { [field]: value });
-    const rep = reps.find((r) => r.id === repId);
-    addLog(`💰 ${String(field)} de ${rep?.name}: ${value}`, 'success');
+
+  const handleUpdateTargets = async (updates: Partial<Targets>) => {
+    const next = { ...tgt, ...updates };
+    // Find team_id from any rep's sales record — stored in the summary response
+    const firstRep = reps[0];
+    if (!firstRep) return;
+    // Fetch team_id from /api/reps
+    const repsRes = await fetch('/api/reps');
+    const repsData = await repsRes.json();
+    const teamId = repsData[0]?.team_id;
+    if (!teamId) return;
+    await fetch('/api/targets', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ team_id: teamId, weekly: next.weekly, monthly: next.monthly, quarterly: next.quarterly, yearly: next.yearly, deal_target: next.dealTarget, conv_target: next.convTarget }),
+    });
+    qc.invalidateQueries({ queryKey: ['targets'] });
+  };
+
+  const handleToggleBadge = async (rep: Rep, badgeId: string) => {
+    const repBadges = badgesMap?.get(rep.id) ?? [];
+    const earned = repBadges.includes(badgeId);
+    const badge = BADGE_DEFS.find((b) => b.id === badgeId);
+
+    if (earned) {
+      // Find the badge row id — refetch badges with rep filter
+      const res = await fetch(`/api/badges?rep_id=${rep.id}`);
+      const rows = await res.json();
+      const row = rows.find((r: any) => r.badge_id === badgeId);
+      if (row) await fetch(`/api/badges/${row.id}`, { method: 'DELETE' });
+    } else {
+      // Need team_id
+      const repsRes = await fetch('/api/reps');
+      const repsData = await repsRes.json();
+      const teamId = repsData.find((r: any) => r.id === rep.id)?.team_id;
+      if (teamId) {
+        await fetch('/api/badges', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rep_id: rep.id, badge_id: badgeId, team_id: teamId }),
+        });
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['badges'] });
+    addLog(`🏅 "${badge?.label}" ${earned ? 'retirado de' : 'asignado a'} ${rep.name}`, 'info');
+    showToast(`Badge "${badge?.label}" ${earned ? 'retirado' : 'asignado'}`);
   };
 
   const totalSales = salesData.reduce((a, d) => a + d.month, 0);
@@ -77,13 +148,9 @@ export function SuperAdminPanel() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* ── TOP NAV ── */}
       <nav style={{ background: '#0b1929', borderBottom: '1px solid var(--border)', padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 12, position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: 2, background: 'linear-gradient(90deg,#b44fff,#ff3d8b)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', whiteSpace: 'nowrap' }}>
           SUPER ADMIN
-        </div>
-        <div style={{ fontSize: 9, letterSpacing: 2, color: 'var(--muted)', borderLeft: '1px solid var(--border)', paddingLeft: 10, textTransform: 'uppercase', display: 'none' }} className="nav-hide-mobile">
-          Panel de Control
         </div>
         <div style={{ flex: 1 }} />
         <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#06101e', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--muted)', fontSize: 11, textDecoration: 'none', padding: '5px 10px', whiteSpace: 'nowrap' }}>
@@ -91,9 +158,7 @@ export function SuperAdminPanel() {
         </Link>
       </nav>
 
-      {/* ── LAYOUT ── */}
       <div className="admin-layout">
-        {/* Sidebar / Tab Bar */}
         <aside className="admin-sidebar">
           {TABS.map((t) => (
             <button key={t.k} onClick={() => setTab(t.k)} className={`admin-sidebar-btn ${tab === t.k ? 'active' : ''}`}>
@@ -103,16 +168,9 @@ export function SuperAdminPanel() {
           ))}
         </aside>
 
-        {/* Main content */}
         <main className="admin-main">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={tab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
+            <motion.div key={tab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
 
               {/* ── OVERVIEW ── */}
               {tab === 'overview' && (
@@ -144,7 +202,6 @@ export function SuperAdminPanel() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                                   <div style={{ width: 22, height: 22, borderRadius: '50%', background: `${rep.color}22`, border: `1.5px solid ${rep.color}88`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: rep.color, flexShrink: 0 }}>{rep.avatar}</div>
                                   <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{rep.name}</span>
-                                  {!rep.active && <span style={{ fontSize: 9, color: '#ff3d8b', border: '1px solid #ff3d8b44', borderRadius: 3, padding: '1px 4px' }}>OFF</span>}
                                 </div>
                               </td>
                               <td style={{ padding: '8px', borderBottom: '1px solid #0e2038' }}><span className="num" style={{ color: rep.color }}>{fmt(d.week)}</span></td>
@@ -179,7 +236,7 @@ export function SuperAdminPanel() {
                           <>
                             <div style={{ flex: 1, minWidth: 120 }}>
                               <div style={{ fontSize: 13, fontWeight: 700 }}>{rep.name}</div>
-                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{rep.role} · {rep.email}</div>
+                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{rep.role}</div>
                             </div>
                             <span style={{ fontSize: 11, color: rep.active ? '#00ff9d' : '#ff3d8b', border: `1px solid ${rep.active ? '#00ff9d44' : '#ff3d8b44'}`, borderRadius: 4, padding: '2px 8px', whiteSpace: 'nowrap' }}>
                               {rep.active ? 'Activo' : 'Inactivo'}
@@ -196,66 +253,27 @@ export function SuperAdminPanel() {
                 </div>
               )}
 
-              {/* ── SALES ── */}
-              {tab === 'sales' && (
-                <div>
-                  <SectionHeader title="Datos de Ventas" sub="Edita los datos de ventas por comercial" />
-                  <div style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', padding: 16, overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-                      <thead>
-                        <tr>
-                          {['Comercial', 'Semana (€)', 'Mes (€)', 'Trim. (€)', 'Año (€)', 'Deals', 'Ticket', 'Conv %', 'Nuevos', 'Racha'].map((h) => (
-                            <th key={h} style={{ fontSize: 10, color: 'var(--muted)', padding: '0 6px 10px', textAlign: 'left', borderBottom: '1px solid var(--border)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {reps.map((rep, i) => {
-                          const d = salesData[i];
-                          if (!d) return null;
-                          const fields: Array<keyof SalesData> = ['week', 'month', 'quarter', 'year', 'deals', 'avgT', 'conv', 'newCli', 'streak'];
-                          return (
-                            <tr key={rep.id}>
-                              <td style={{ padding: '6px', borderBottom: '1px solid #0e2038' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: `${rep.color}22`, border: `1.5px solid ${rep.color}66`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800, color: rep.color, flexShrink: 0 }}>{rep.avatar}</div>
-                                  <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{rep.name}</span>
-                                </div>
-                              </td>
-                              {fields.map((key) => (
-                                <td key={key} style={{ padding: '4px 6px', borderBottom: '1px solid #0e2038' }}>
-                                  <input type="number" defaultValue={d[key] as number}
-                                    onBlur={(e) => handleSaveSales(rep.id, key, Number(e.target.value))}
-                                    style={{ width: 72, fontSize: 12, padding: '3px 6px', background: '#112444', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text)', fontFamily: 'inherit' }}
-                                  />
-                                </td>
-                              ))}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
               {/* ── TARGETS ── */}
               {tab === 'targets' && (
                 <div>
                   <SectionHeader title="Objetivos" sub="Configura los targets del equipo" />
                   <div className="admin-targets-grid">
                     {([
-                      { key: 'weekly',     label: 'Objetivo Semanal (€)',    color: '#00e5ff' },
-                      { key: 'monthly',    label: 'Objetivo Mensual (€)',     color: '#00ff9d' },
-                      { key: 'quarterly',  label: 'Objetivo Trimestral (€)',  color: '#ffd600' },
-                      { key: 'yearly',     label: 'Objetivo Anual (€)',       color: '#ff6b35' },
-                      { key: 'dealTarget', label: 'Deals objetivo/mes',       color: '#b44fff' },
-                      { key: 'convTarget', label: 'Conversión objetivo (%)',  color: '#ff3d8b' },
-                    ] as const).map(({ key, label, color }) => (
+                      { key: 'weekly' as const,     label: 'Objetivo Semanal (€)',   color: '#00e5ff' },
+                      { key: 'monthly' as const,    label: 'Objetivo Mensual (€)',    color: '#00ff9d' },
+                      { key: 'quarterly' as const,  label: 'Objetivo Trimestral (€)', color: '#ffd600' },
+                      { key: 'yearly' as const,     label: 'Objetivo Anual (€)',      color: '#ff6b35' },
+                      { key: 'dealTarget' as const, label: 'Deals objetivo/mes',      color: '#b44fff' },
+                      { key: 'convTarget' as const, label: 'Conversión objetivo (%)', color: '#ff3d8b' },
+                    ]).map(({ key, label, color }) => (
                       <div key={key} style={{ background: 'var(--card)', borderRadius: 10, border: `1px solid ${color}33`, padding: 14 }}>
                         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>{label}</div>
-                        <input type="number" defaultValue={targets[key]}
-                          onBlur={(e) => { updateTargets({ [key]: Number(e.target.value) }); addLog(`🎯 ${label} → ${e.target.value}`, 'success'); showToast(`${label} actualizado`); }}
+                        <input type="number" defaultValue={tgt[key]}
+                          onBlur={(e) => {
+                            handleUpdateTargets({ [key]: Number(e.target.value) });
+                            addLog(`🎯 ${label} → ${e.target.value}`, 'success');
+                            showToast(`${label} actualizado`);
+                          }}
                           style={{ width: '100%', fontSize: 18, padding: '8px 10px', color, background: '#112444', border: `1px solid ${color}33`, borderRadius: 6 }}
                         />
                       </div>
@@ -269,7 +287,7 @@ export function SuperAdminPanel() {
                 <div>
                   <SectionHeader title="Badges" sub="Asigna o retira logros a cada comercial" />
                   <div style={{ display: 'grid', gap: 10 }}>
-                    {reps.map((rep, repIdx) => (
+                    {reps.map((rep) => (
                       <div key={rep.id} style={{ background: 'var(--card)', borderRadius: 10, border: '1px solid var(--border)', padding: 14 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                           <div style={{ width: 30, height: 30, borderRadius: '50%', background: `${rep.color}22`, border: `2px solid ${rep.color}88`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: rep.color, flexShrink: 0 }}>{rep.avatar}</div>
@@ -277,13 +295,9 @@ export function SuperAdminPanel() {
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {BADGE_DEFS.map((b) => {
-                            const earned = (badges[repIdx] ?? []).includes(b.id);
+                            const earned = (badgesMap?.get(rep.id) ?? []).includes(b.id);
                             return (
-                              <button key={b.id} onClick={() => {
-                                toggleBadge(repIdx, b.id);
-                                addLog(`🏅 "${b.label}" ${earned ? 'retirado' : 'asignado'} a ${rep.name}`, 'info');
-                                showToast(`Badge "${b.label}" ${earned ? 'retirado' : 'asignado'}`);
-                              }} style={{
+                              <button key={b.id} onClick={() => handleToggleBadge(rep, b.id)} style={{
                                 display: 'flex', alignItems: 'center', gap: 5,
                                 padding: '5px 10px', borderRadius: 7,
                                 background: earned ? `${b.color}22` : 'var(--card2)',
@@ -331,7 +345,6 @@ export function SuperAdminPanel() {
         </main>
       </div>
 
-      {/* Toast */}
       <AnimatePresence>
         {toast && (
           <motion.div

@@ -13,18 +13,28 @@ import { Particles } from '@/components/ui/Particles';
 import { fmt, getSalesForPeriod, getTargetForPeriod, getRank, calcXP } from '@/lib/data';
 import { BADGE_DEFS, WEEKLY_SALES_CHART } from '@/lib/data';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useRepSummary } from '@/lib/hooks/useRepSummary';
+import { useTargets } from '@/lib/hooks/useTargets';
+import { useBadges } from '@/lib/hooks/useBadges';
 
 export function PersonalView() {
-  const { repIdx, period, reps, salesData, targets, badges } = useDashboardStore();
+  const { repIdx, period } = useDashboardStore();
+  const { data: summary, isLoading: loadingReps } = useRepSummary();
+  const { data: targets, isLoading: loadingTargets } = useTargets();
+  const { data: badgesMap } = useBadges();
   const [celebrate, setCelebrate] = useState(false);
+
+  const reps = summary?.reps ?? [];
+  const salesData = summary?.salesData ?? [];
+  const tgt = targets ?? { weekly: 0, monthly: 0, quarterly: 0, yearly: 0, dealTarget: 0, convTarget: 0 };
 
   const rep = reps[repIdx];
   const data = salesData[repIdx];
   const sales = data ? getSalesForPeriod(data, period) : 0;
-  const target = getTargetForPeriod(targets, period);
-  const rank = getRank(repIdx, period, salesData);
-  const badgeIds = badges[repIdx] ?? [];
-  const overTarget = sales >= target;
+  const target = getTargetForPeriod(tgt, period);
+  const rank = rep ? getRank(repIdx, period, salesData) : 1;
+  const badgeIds = rep ? (badgesMap?.get(rep.id) ?? []) : [];
+  const overTarget = sales >= target && target > 0;
   const weeklyData = WEEKLY_SALES_CHART.data[repIdx] ?? [];
   const weekTotal = weeklyData.reduce((a, b) => a + b, 0);
   const xp = data ? calcXP(sales, data.deals, data.streak) : 0;
@@ -36,6 +46,14 @@ export function PersonalView() {
       return () => clearTimeout(t);
     }
   }, [repIdx, period, overTarget]);
+
+  if (loadingReps || loadingTargets) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'var(--muted)', fontSize: 14 }}>
+        Cargando datos...
+      </div>
+    );
+  }
 
   if (!rep || !data) return null;
 
@@ -50,11 +68,9 @@ export function PersonalView() {
         style={{ display: 'flex', flexDirection: 'column', padding: 20, position: 'relative', overflow: 'hidden' }}
         delay={0}
       >
-        {/* top accent line */}
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, transparent, ${rep.color}, transparent)` }} />
 
         <div className="hero-inner">
-          {/* Avatar */}
           <div className="hero-avatar-wrap" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
             <motion.div
               style={{
@@ -74,13 +90,11 @@ export function PersonalView() {
             <RankBadge rank={rank} size={44} />
           </div>
 
-          {/* Center info */}
           <div className="hero-center" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', flex: 1 }}>
             <div style={{ fontSize: 17, fontWeight: 800, marginBottom: 2 }}>{rep.name}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>{rep.role}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>Posición #{rank} en el equipo</div>
 
-            {/* Streak */}
             <div style={{
               background: '#112444', borderRadius: 10, padding: '8px 14px', width: '100%',
               display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12,
@@ -93,7 +107,6 @@ export function PersonalView() {
               </div>
             </div>
 
-            {/* Badges */}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, alignSelf: 'flex-start' }}>LOGROS</div>
             <div className="badge-row">
               {BADGE_DEFS.map((b) => (
@@ -123,13 +136,13 @@ export function PersonalView() {
             <ProgressBar
               value={sales} target={target} color={rep.color}
               label={period === 'week' ? 'Objetivo semanal' : 'Objetivo mensual'}
-              sublabel={`${Math.round((sales / target) * 100)}% completado`}
+              sublabel={`${Math.round((sales / (target || 1)) * 100)}% completado`}
             />
             {period === 'month' && (
               <ProgressBar
-                value={data.week} target={targets.weekly} color="#b44fff"
+                value={data.week} target={tgt.weekly} color="#b44fff"
                 label="Objetivo semanal"
-                sublabel={`${Math.round((data.week / targets.weekly) * 100)}% completado`}
+                sublabel={`${Math.round((data.week / (tgt.weekly || 1)) * 100)}% completado`}
               />
             )}
             <div style={{ marginTop: 12, background: '#112444', borderRadius: 8, padding: 10, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
