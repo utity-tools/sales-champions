@@ -28,6 +28,7 @@ export function Particles({ active }: { active: boolean }) {
       size: Math.random() * 8 + 4,
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
     }));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setParticles(newP);
     const t = setTimeout(() => setParticles([]), 2000);
     return () => clearTimeout(t);
