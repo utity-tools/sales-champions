@@ -11,9 +11,7 @@ export async function proxy(request: NextRequest) {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (cookiesToSet) => {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
@@ -23,14 +21,12 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // Refresh session — required for Server Components to read auth state
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // IMPORTANT: always call getUser() — refreshes session cookies
+  const { data: { user } } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/signup');
   const isProtected = pathname.startsWith('/dashboard') || pathname.startsWith('/admin');
+  const isAuthRoute = pathname === '/login';
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
@@ -48,5 +44,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/admin/:path*', '/login', '/signup'],
+  matcher: ['/dashboard/:path*', '/admin/:path*', '/login'],
 };
