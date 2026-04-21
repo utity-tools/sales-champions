@@ -8,6 +8,9 @@ on:
   schedule:
     - cron: '0 3 * * 1'  # every Monday at 03:00 UTC
 
+# Skip CodeQL on Dependabot PRs — they only bump dependency versions
+# PR Checks still runs to validate the update doesn't break the build
+
 permissions:
   contents: read
   security-events: write
@@ -16,6 +19,7 @@ jobs:
   analyze:
     name: CodeQL (JavaScript/TypeScript)
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
 
