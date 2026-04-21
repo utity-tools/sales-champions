@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Rep, SalesData } from '@/types';
 import type { RepSummary } from '@/lib/supabase/types';
 
-function mapToFrontend(rows: RepSummary[]): { reps: Rep[]; salesData: SalesData[] } {
+export function mapToFrontend(rows: RepSummary[]): { reps: Rep[]; salesData: SalesData[] } {
   const reps: Rep[] = rows.map((r) => ({
     id: r.rep_id,
     name: r.name,

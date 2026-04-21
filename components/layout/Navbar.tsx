@@ -7,16 +7,19 @@ import { useRepSummary } from '@/lib/hooks/useRepSummary';
 import { signOut } from '@/app/actions/auth';
 import { PeriodTabs } from './PeriodTabs';
 import { DateRangePicker } from './DateRangePicker';
+import type { View } from '@/types';
+import type { Rep } from '@/types';
 
-export function Navbar() {
-  const { view, period, repIdx, setView, setPeriod, setRepIdx } = useDashboardStore();
-  const { data: summary } = useRepSummary();
-  const reps = summary?.reps ?? [];
-  const [drawerOpen, setDrawerOpen] = useState(false);
+/* ── Sub-components defined outside render ─────────────────────── */
 
-  /* ── Reusable sub-components ─────────────────────────────────── */
+interface ViewToggleProps {
+  view: View;
+  setView: (v: View) => void;
+  setDrawerOpen: (o: boolean) => void;
+}
 
-  const ViewToggle = () => (
+function ViewToggle({ view, setView, setDrawerOpen }: ViewToggleProps) {
+  return (
     <div style={{ display: 'flex', gap: 3, background: '#06101e', borderRadius: 8, padding: 3, border: '1px solid var(--border)', flexShrink: 0 }}>
       {(['personal', 'team'] as const).map((k) => (
         <button key={k} onClick={() => { setView(k); setDrawerOpen(false); }} style={{
@@ -32,8 +35,18 @@ export function Navbar() {
       ))}
     </div>
   );
+}
 
-  const UserSelector = ({ wrap = false }: { wrap?: boolean }) => (
+interface UserSelectorProps {
+  reps: Rep[];
+  repIdx: number;
+  setRepIdx: (i: number) => void;
+  setDrawerOpen: (o: boolean) => void;
+  wrap?: boolean;
+}
+
+function UserSelector({ reps, repIdx, setRepIdx, setDrawerOpen, wrap = false }: UserSelectorProps) {
+  return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0, flexWrap: wrap ? 'wrap' : 'nowrap' }}>
       <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>Usuario:</span>
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -53,8 +66,10 @@ export function Navbar() {
       </div>
     </div>
   );
+}
 
-  const AdminLink = () => (
+function AdminLink() {
+  return (
     <Link href="/admin" style={{
       display: 'flex', alignItems: 'center', gap: 5,
       background: '#1a0a2e', border: '1px solid #b44fff44', borderRadius: 7,
@@ -63,8 +78,10 @@ export function Navbar() {
       flexShrink: 0, whiteSpace: 'nowrap',
     }}>⚙️ Admin</Link>
   );
+}
 
-  const LogoutButton = () => (
+function LogoutButton() {
+  return (
     <form action={signOut}>
       <button type="submit" style={{
         display: 'flex', alignItems: 'center', gap: 5,
@@ -75,6 +92,15 @@ export function Navbar() {
       }}>⏻ Salir</button>
     </form>
   );
+}
+
+/* ── Navbar ─────────────────────────────────────────────────────── */
+
+export function Navbar() {
+  const { view, period, repIdx, setView, setPeriod, setRepIdx } = useDashboardStore();
+  const { data: summary } = useRepSummary();
+  const reps = summary?.reps ?? [];
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
     <nav className="nav-root">
@@ -95,18 +121,18 @@ export function Navbar() {
 
         {/* Desktop: all controls in a single flex row */}
         <div className="nav-desktop-controls">
-          <ViewToggle />
+          <ViewToggle view={view} setView={setView} setDrawerOpen={setDrawerOpen} />
           <PeriodTabs value={period} onChange={setPeriod} />
           <DateRangePicker />
           <div style={{ flex: 1 }} />
-          {view === 'personal' && <UserSelector />}
+          {view === 'personal' && <UserSelector reps={reps} repIdx={repIdx} setRepIdx={setRepIdx} setDrawerOpen={setDrawerOpen} />}
           <AdminLink />
           <LogoutButton />
         </div>
 
         {/* Tablet row-1 extras: view toggle + spacer + admin link */}
         <div className="nav-tablet-row1">
-          <ViewToggle />
+          <ViewToggle view={view} setView={setView} setDrawerOpen={setDrawerOpen} />
           <div style={{ flex: 1 }} />
           <AdminLink />
           <LogoutButton />
@@ -122,18 +148,18 @@ export function Navbar() {
       <div className="nav-row2">
         <PeriodTabs value={period} onChange={setPeriod} />
         <DateRangePicker />
-        {view === 'personal' && <UserSelector />}
+        {view === 'personal' && <UserSelector reps={reps} repIdx={repIdx} setRepIdx={setRepIdx} setDrawerOpen={setDrawerOpen} />}
       </div>
 
       {/* ── Drawer (mobile only) ── */}
       <div className={`nav-drawer ${drawerOpen ? 'open' : ''}`}>
-        <div className="nav-drawer-row"><ViewToggle /></div>
+        <div className="nav-drawer-row"><ViewToggle view={view} setView={setView} setDrawerOpen={setDrawerOpen} /></div>
         <div className="nav-drawer-row">
           <PeriodTabs value={period} onChange={setPeriod} />
           <DateRangePicker />
         </div>
         {view === 'personal' && (
-          <div className="nav-drawer-row"><UserSelector wrap /></div>
+          <div className="nav-drawer-row"><UserSelector reps={reps} repIdx={repIdx} setRepIdx={setRepIdx} setDrawerOpen={setDrawerOpen} wrap /></div>
         )}
         <div className="nav-drawer-row"><AdminLink /><LogoutButton /></div>
       </div>

@@ -41,6 +41,7 @@ export function PersonalView() {
 
   useEffect(() => {
     if (overTarget) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCelebrate(true);
       const t = setTimeout(() => setCelebrate(false), 2100);
       return () => clearTimeout(t);

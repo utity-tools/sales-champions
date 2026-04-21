@@ -2,13 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-import { z } from 'zod';
-
-const BadgeSchema = z.object({
-  rep_id: z.number(),
-  badge_id: z.string().min(1),
-  team_id: z.string().uuid(),
-});
+import { BadgeSchema } from '@/lib/schemas';
 
 export async function awardBadge(formData: unknown) {
   const parsed = BadgeSchema.safeParse(formData);

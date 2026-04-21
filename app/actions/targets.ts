@@ -2,17 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-import { z } from 'zod';
-
-const TargetSchema = z.object({
-  team_id: z.string().uuid(),
-  weekly: z.number().positive(),
-  monthly: z.number().positive(),
-  quarterly: z.number().positive(),
-  yearly: z.number().positive(),
-  deal_target: z.number().int().positive(),
-  conv_target: z.number().min(0).max(100),
-});
+import { TargetSchema } from '@/lib/schemas';
 
 export async function upsertTargets(formData: unknown) {
   const parsed = TargetSchema.safeParse(formData);

@@ -1,0 +1,8 @@
+# All files require review from the repo owner
+* @utity-tools
+
+# CI/CD and security changes require explicit review
+.github/ @utity-tools
+supabase/ @utity-tools
+lib/supabase/ @utity-tools
+app/actions/ @utity-tools
