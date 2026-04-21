@@ -3,11 +3,14 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useRepSummary } from '@/lib/hooks/useRepSummary';
 import { PeriodTabs } from './PeriodTabs';
 import { DateRangePicker } from './DateRangePicker';
 
 export function Navbar() {
-  const { view, period, repIdx, reps, setView, setPeriod, setRepIdx } = useDashboardStore();
+  const { view, period, repIdx, setView, setPeriod, setRepIdx } = useDashboardStore();
+  const { data: summary } = useRepSummary();
+  const reps = summary?.reps ?? [];
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   /* ── Reusable sub-components ─────────────────────────────────── */

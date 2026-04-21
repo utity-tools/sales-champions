@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { z } from 'zod';
 
 const TargetSchema = z.object({
@@ -11,22 +11,15 @@ const TargetSchema = z.object({
   conv_target: z.number().min(0).max(100),
 });
 
-export async function GET(request: Request) {
-  const supabase = await createClient();
-  const { searchParams } = new URL(request.url);
-  const teamId = searchParams.get('team_id');
-
-  let query = supabase.from('targets').select('*');
-  if (teamId) query = query.eq('team_id', teamId);
-
-  const { data, error } = await query.single();
-
+export async function GET() {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase.from('targets').select('*').limit(1).single();
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json(data);
 }
 
 export async function PUT(request: Request) {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const body = await request.json();
 
   const parsed = TargetSchema.safeParse(body);
@@ -35,7 +28,6 @@ export async function PUT(request: Request) {
   }
 
   const { team_id, ...values } = parsed.data;
-
   const { data, error } = await supabase
     .from('targets')
     .upsert({ team_id, ...values }, { onConflict: 'team_id' })
